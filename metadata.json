@@ -1,0 +1,6 @@
+{
+  "name": "CREOX — Premium Digital Marketplace",
+  "description": "Discover premium digital products, powerful software, design assets, and exclusive resources with instant bKash payment and automatic digital delivery.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
