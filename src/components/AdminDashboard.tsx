@@ -156,7 +156,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       shortDescription: '',
       price: '',
       originalPrice: '',
-      imageUrl: '/src/assets/images/creox_hero_showcase_1793972157432.jpg',
+      imageUrl: '/assets/images/creox_hero_showcase_1793972157432.jpg',
       features: '',
       deliveryType: 'zip_download',
       fileName: '',

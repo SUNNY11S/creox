@@ -80,9 +80,9 @@ const initialProducts = [
     price: 3490,
     originalPrice: 5990,
     discountPercentage: 42,
-    imageUrl: '/src/assets/images/prod_ai_suite_1793972157837.jpg',
+    imageUrl: '/assets/images/prod_ai_suite_1793972157837.jpg',
     secondaryImages: [
-      '/src/assets/images/creox_hero_showcase_1793972157432.jpg'
+      '/assets/images/creox_hero_showcase_1793972157432.jpg'
     ],
     features: [
       'Complete desktop installer (macOS Apple Silicon & Intel, Windows 11, Linux AppImage)',
@@ -121,9 +121,9 @@ const initialProducts = [
     price: 2490,
     originalPrice: 4500,
     discountPercentage: 45,
-    imageUrl: '/src/assets/images/prod_design_tokens_1793972159266.jpg',
+    imageUrl: '/assets/images/prod_design_tokens_1793972159266.jpg',
     secondaryImages: [
-      '/src/assets/images/creox_hero_showcase_1793972157432.jpg'
+      '/assets/images/creox_hero_showcase_1793972157432.jpg'
     ],
     features: [
       'Original .FIG file with 2,400+ atomic components & responsive templates',
@@ -162,9 +162,9 @@ const initialProducts = [
     price: 3990,
     originalPrice: 6990,
     discountPercentage: 43,
-    imageUrl: '/src/assets/images/prod_cloud_devtools_1793972159641.jpg',
+    imageUrl: '/assets/images/prod_cloud_devtools_1793972159641.jpg',
     secondaryImages: [
-      '/src/assets/images/creox_hero_showcase_1793972157432.jpg'
+      '/assets/images/creox_hero_showcase_1793972157432.jpg'
     ],
     features: [
       'Battle-tested Terraform modules for scalable AWS & GCP clusters',
@@ -203,7 +203,7 @@ const initialProducts = [
     price: 4990,
     originalPrice: 8500,
     discountPercentage: 41,
-    imageUrl: '/src/assets/images/creox_hero_showcase_1793972157432.jpg',
+    imageUrl: '/assets/images/creox_hero_showcase_1793972157432.jpg',
     secondaryImages: [],
     features: [
       'Next.js 15, TypeScript, Tailwind v4, React 19 architecture',
@@ -242,7 +242,7 @@ const initialProducts = [
     price: 1250,
     originalPrice: 2200,
     discountPercentage: 43,
-    imageUrl: '/src/assets/images/prod_ai_suite_1793972157837.jpg',
+    imageUrl: '/assets/images/prod_ai_suite_1793972157837.jpg',
     secondaryImages: [],
     features: [
       'High-res DRM-free PDF + EPUB + Kindle format downloads',
@@ -278,7 +278,7 @@ const initialProducts = [
     price: 5490,
     originalPrice: 9990,
     discountPercentage: 45,
-    imageUrl: '/src/assets/images/prod_cloud_devtools_1793972159641.jpg',
+    imageUrl: '/assets/images/prod_cloud_devtools_1793972159641.jpg',
     secondaryImages: [],
     features: [
       'Official JetBrains subscription code valid for 365 days',
@@ -394,7 +394,7 @@ const initialOrders = [
         id: 'item-1',
         productId: 'prod-1',
         productName: 'Nexus AI Productivity Suite Pro',
-        productImage: '/src/assets/images/prod_ai_suite_1793972157837.jpg',
+        productImage: '/assets/images/prod_ai_suite_1793972157837.jpg',
         price: 3490,
         quantity: 1,
         deliveryType: 'license_key',
@@ -992,7 +992,7 @@ app.post('/api/products', adminAuth, (req: Request, res: Response) => {
     price,
     originalPrice,
     discountPercentage,
-    imageUrl: data.imageUrl || '/src/assets/images/creox_hero_showcase_1793972157432.jpg',
+    imageUrl: data.imageUrl || '/assets/images/creox_hero_showcase_1793972157432.jpg',
     secondaryImages: data.secondaryImages || [],
     features: Array.isArray(data.features) ? data.features : (data.features || '').split('\n').filter(Boolean),
     specifications: data.specifications || {},
