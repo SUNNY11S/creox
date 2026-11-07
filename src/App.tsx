@@ -22,11 +22,20 @@ import { LivePurchaseTicker } from './components/LivePurchaseTicker';
 import { ScrollToTop } from './components/ScrollToTop';
 import { Check } from 'lucide-react';
 
+import { initialProducts, initialCategories, initialReviews } from './data/initialData';
+
 export default function App() {
-  // Global Data State
-  const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [reviews, setReviews] = useState<CustomerReview[]>([]);
+  // Global Data State with resilient fallback for Vercel/Jamstack
+  const [products, setProducts] = useState<Product[]>(() => {
+    try {
+      const saved = localStorage.getItem('creox_saved_products');
+      return saved ? JSON.parse(saved) : initialProducts;
+    } catch {
+      return initialProducts;
+    }
+  });
+  const [categories, setCategories] = useState<Category[]>(initialCategories);
+  const [reviews, setReviews] = useState<CustomerReview[]>(initialReviews);
   const [settings, setSettings] = useState<WebsiteSettings | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
 
