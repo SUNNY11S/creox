@@ -13,6 +13,7 @@ import {
   HelpCircle,
   Lock,
 } from 'lucide-react';
+import { saveFirestoreOrder, getFirestoreBkashConfig } from '../services/dbService';
 
 interface BkashPaymentModalProps {
   isOpen: boolean;
@@ -46,24 +47,18 @@ export const BkashPaymentModal: React.FC<BkashPaymentModalProps> = ({
   const [accountType, setAccountType] = useState('Personal (Send Money)');
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('creox_bkash_config');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.receiverNumber) setReceiverNumber(parsed.receiverNumber);
-        if (parsed.accountType) {
-          setAccountType(
-            parsed.accountType === 'merchant'
-              ? 'Merchant (Payment)'
-              : parsed.accountType === 'agent'
-              ? 'Agent (Cash Out)'
-              : 'Personal (Send Money)'
-          );
-        }
+    getFirestoreBkashConfig().then((cfg) => {
+      if (cfg?.receiverNumber) setReceiverNumber(cfg.receiverNumber);
+      if (cfg?.accountType) {
+        setAccountType(
+          cfg.accountType === 'merchant'
+            ? 'Merchant (Payment)'
+            : cfg.accountType === 'agent'
+            ? 'Agent (Cash Out)'
+            : 'Personal (Send Money)'
+        );
       }
-    } catch {
-      // ignore
-    }
+    });
   }, []);
 
   // Mode: 'direct' (bKash Send Money to 01988123793) or 'gateway' (Tokenized PGW / Sandbox)
@@ -207,6 +202,9 @@ export const BkashPaymentModal: React.FC<BkashPaymentModalProps> = ({
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
+
+    // Cloud Firestore order sync (available across all devices & admin panels)
+    saveFirestoreOrder(verifiedOrder);
 
     // Store in browser local storage
     try {

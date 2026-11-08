@@ -23,6 +23,7 @@ import { ScrollToTop } from './components/ScrollToTop';
 import { Check } from 'lucide-react';
 
 import { initialProducts, initialCategories, initialReviews } from './data/initialData';
+import { getFirestoreProducts, subscribeFirestoreProducts } from './services/dbService';
 
 export default function App() {
   // Global Data State with resilient fallback for Vercel/Jamstack
@@ -85,30 +86,21 @@ export default function App() {
     }
   }, []);
 
-  // Fetch initial catalog
+  // Fetch initial catalog from Firestore Cloud Database
   const loadInitialData = async () => {
     try {
-      // First check local storage so user modifications (add/delete) are preserved on Vercel
-      const savedProds = localStorage.getItem('creox_saved_products');
-      if (savedProds) {
-        try {
-          const parsed = JSON.parse(savedProds);
-          if (Array.isArray(parsed)) {
-            setProducts(parsed);
-          }
-        } catch {
-          // ignore
-        }
+      // 1. Fetch live cloud products from Firestore
+      const cloudProds = await getFirestoreProducts();
+      if (cloudProds && cloudProds.length > 0) {
+        setProducts(cloudProds);
       }
 
-      const [prodRes, catRes, revRes, settRes] = await Promise.all([
-        fetch('/api/products').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      const [catRes, revRes, settRes] = await Promise.all([
         fetch('/api/categories').then((r) => (r.ok ? r.json() : null)).catch(() => null),
         fetch('/api/reviews').then((r) => (r.ok ? r.json() : null)).catch(() => null),
         fetch('/api/settings').then((r) => (r.ok ? r.json() : null)).catch(() => null),
       ]);
 
-      if (Array.isArray(prodRes) && !savedProds) setProducts(prodRes);
       if (Array.isArray(catRes)) setCategories(catRes);
       if (Array.isArray(revRes)) setReviews(revRes);
       if (settRes) setSettings(settRes);
@@ -121,6 +113,13 @@ export default function App() {
 
   useEffect(() => {
     loadInitialData();
+    // Real-time synchronization across all browsers, devices, and customers
+    const unsubscribe = subscribeFirestoreProducts((liveProds) => {
+      if (liveProds && liveProds.length > 0) {
+        setProducts(liveProds);
+      }
+    });
+    return () => unsubscribe();
   }, []);
 
   // Toast helper

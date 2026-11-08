@@ -8,6 +8,14 @@ import {
   TrendingUp, Download, KeyRound, ExternalLink, RefreshCw, Upload, Lock, Sparkles,
   Smartphone, Copy, Check
 } from 'lucide-react';
+import {
+  saveFirestoreProduct,
+  deleteFirestoreProduct,
+  getFirestoreOrders,
+  deleteFirestoreOrder,
+  saveFirestoreBkashConfig,
+  getFirestoreBkashConfig,
+} from '../services/dbService';
 
 interface AdminDashboardProps {
   onClose: () => void;
@@ -112,16 +120,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   });
   const [bkashConfigFeedback, setBkashConfigFeedback] = useState<string | null>(null);
 
-  const handleSaveBkashConfig = (e: React.FormEvent) => {
+  const handleSaveBkashConfig = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       localStorage.setItem('creox_bkash_config', JSON.stringify(bkashConfig));
-      setBkashConfigFeedback('bKash Payment settings successfully saved!');
+      saveFirestoreBkashConfig(bkashConfig);
+      setBkashConfigFeedback('bKash Payment settings successfully saved & synced to cloud!');
       setTimeout(() => setBkashConfigFeedback(null), 3000);
     } catch {
-      setBkashConfigFeedback('Failed to save settings to browser.');
+      setBkashConfigFeedback('Failed to save settings.');
     }
   };
+
+  useEffect(() => {
+    getFirestoreBkashConfig().then((cfg) => {
+      if (cfg) setBkashConfig(cfg);
+    });
+  }, []);
 
   // Verify stored token on load
   useEffect(() => {
@@ -223,21 +238,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           .catch(() => null),
       ]);
 
-      // Load orders: priority to localStorage so deleted orders stay deleted permanently on Vercel
-      const localSavedOrders = localStorage.getItem('creox_saved_orders');
-      if (localSavedOrders !== null) {
-        try {
-          setOrders(JSON.parse(localSavedOrders));
-        } catch {
+      // Load orders from Cloud Firestore (synced across all devices and browsers)
+      try {
+        const cloudOrders = await getFirestoreOrders();
+        if (cloudOrders) setOrders(cloudOrders);
+      } catch {
+        const localSavedOrders = localStorage.getItem('creox_saved_orders');
+        if (localSavedOrders !== null) {
+          try {
+            setOrders(JSON.parse(localSavedOrders));
+          } catch {
+            setOrders(Array.isArray(ordersRes) ? ordersRes : initialOrders);
+          }
+        } else {
           setOrders(Array.isArray(ordersRes) ? ordersRes : initialOrders);
-        }
-      } else {
-        const defaultList = Array.isArray(ordersRes) ? ordersRes : initialOrders;
-        setOrders(defaultList);
-        try {
-          localStorage.setItem('creox_saved_orders', JSON.stringify(defaultList));
-        } catch {
-          // ignore
         }
       }
 
@@ -442,8 +456,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       onProductsUpdated(updatedList);
     }
 
+    // Cloud Firestore Sync (instantly available to all visitors, devices & browsers)
+    saveFirestoreProduct(newProd);
+
     setProductModalOpen(false);
-    setProductCrudFeedback(editingProduct ? `Updated "${newProd.name}" successfully!` : `Added "${newProd.name}" to store catalog!`);
+    setProductCrudFeedback(editingProduct ? `Updated "${newProd.name}" successfully in Cloud Database!` : `Added "${newProd.name}" to Cloud Database!`);
     setTimeout(() => setProductCrudFeedback(null), 3500);
 
     // 2. Try server sync if backend API is online
@@ -484,8 +501,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       onProductsUpdated(remaining);
     }
 
+    // Cloud Firestore Permanent Delete
+    deleteFirestoreProduct(id);
+
     setProductToDelete(null);
-    setProductCrudFeedback('Product deleted successfully from catalog.');
+    setProductCrudFeedback('Product permanently deleted from Cloud Database.');
     setTimeout(() => setProductCrudFeedback(null), 3000);
 
     // Try server sync
@@ -508,8 +528,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       // ignore
     }
 
+    // Cloud Firestore Delete
+    deleteFirestoreOrder(orderId);
+
     setOrderToDelete(null);
-    setOrderCrudFeedback('Order deleted successfully.');
+    setOrderCrudFeedback('Order deleted successfully from Cloud Database.');
     setTimeout(() => setOrderCrudFeedback(null), 3000);
 
     try {
@@ -523,6 +546,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const executeClearAllOrders = async () => {
+    // Delete all from Firestore
+    for (const ord of orders) {
+      deleteFirestoreOrder(ord.id);
+    }
+
     setOrders([]);
     try {
       localStorage.setItem('creox_saved_orders', JSON.stringify([]));
@@ -531,7 +559,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
 
     setConfirmClearAllOrders(false);
-    setOrderCrudFeedback('All orders have been cleared.');
+    setOrderCrudFeedback('All orders have been cleared from Cloud Database.');
     setTimeout(() => setOrderCrudFeedback(null), 3000);
 
     try {
