@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { X, Search, PackageCheck, AlertCircle, Loader2, ArrowRight } from 'lucide-react';
 import { Order } from '../types';
 
+import { initialOrders } from '../data/initialData';
+
 interface OrderLookupModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -25,24 +27,57 @@ export const OrderLookupModal: React.FC<OrderLookupModalProps> = ({
     setErrorMessage('');
     setLoading(true);
 
+    const cleanOrderNum = orderNumber.trim().toLowerCase();
+    const cleanEmail = email.trim().toLowerCase();
+
+    // 1. Check local browser storage & initial orders (works 100% on Vercel)
+    try {
+      const savedOrdersStr = localStorage.getItem('creox_saved_orders');
+      const savedOrders: Order[] = savedOrdersStr ? JSON.parse(savedOrdersStr) : [];
+      const pool: Order[] = [...savedOrders, ...initialOrders];
+
+      const found = pool.find((o) => {
+        const matchesOrder =
+          o.orderNumber.toLowerCase() === cleanOrderNum ||
+          (o.bkashTrxId && o.bkashTrxId.toLowerCase() === cleanOrderNum) ||
+          o.id.toLowerCase() === cleanOrderNum;
+        
+        const matchesEmail = !cleanEmail || o.customerEmail.toLowerCase() === cleanEmail;
+        return matchesOrder && matchesEmail;
+      });
+
+      if (found) {
+        setLoading(false);
+        onOrderFound(found);
+        return;
+      }
+    } catch {
+      // ignore
+    }
+
+    // 2. Query backend if Node API is running
     try {
       const response = await fetch('/api/orders/lookup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderNumber, email }),
+        body: JSON.stringify({ orderNumber: cleanOrderNum, email: cleanEmail }),
       });
 
-      const data = await response.json();
-      if (response.ok && data.success && data.order) {
-        onOrderFound(data.order);
-      } else {
-        setErrorMessage(data.error || 'No matching order found for this email and order number.');
+      const contentType = response.headers.get('content-type') || '';
+      if (response.ok && contentType.includes('application/json')) {
+        const data = await response.json();
+        if (data.success && data.order) {
+          setLoading(false);
+          onOrderFound(data.order);
+          return;
+        }
       }
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Error connecting to order retrieval service.');
-    } finally {
-      setLoading(false);
+    } catch {
+      // backend offline
     }
+
+    setLoading(false);
+    setErrorMessage('No matching order found for this Order Number or Email.');
   };
 
   return (

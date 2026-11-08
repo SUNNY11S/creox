@@ -167,12 +167,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           </div>
 
           {/* Exclusive bKash Notice */}
-          <div className="p-3.5 rounded-xl bg-[#0b1323] border border-cyan-500/30 flex items-start gap-3">
+          <div className="p-3.5 rounded-xl bg-[#0b1323] border border-[#E2136E]/40 flex items-start gap-3">
             <div className="w-8 h-8 rounded-lg bg-[#E2136E] text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-md">
               bKash
             </div>
             <div className="text-[11px] text-slate-300 leading-relaxed">
-              <span className="font-bold text-cyan-300">Official bKash Merchant Gateway:</span> You will complete payment via the secure bKash hosted checkout. Automatic delivery executes instantly upon server-side verification.
+              <span className="font-bold text-pink-400">bKash Account: 01988123793</span> — Send Money or pay via bKash. Your product files and license keys will be delivered automatically on-screen immediately upon TrxID verification.
             </div>
           </div>
 

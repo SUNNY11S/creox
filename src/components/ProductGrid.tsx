@@ -134,20 +134,23 @@ export const ProductGrid: React.FC<ProductGridProps> = ({
           >
             All Categories ({products.length})
           </motion.button>
-          {categories.map((cat) => (
-            <motion.button
-              key={cat.id}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => onSelectCategory(cat.name)}
-              className={`px-4 py-2 text-xs font-medium rounded-xl whitespace-nowrap shrink-0 transition-all cursor-pointer ${
-                selectedCategory === cat.name
-                  ? 'bg-gradient-to-r from-cyan-400 to-emerald-400 text-slate-950 font-bold shadow-md'
-                  : 'bg-[#0d121f] text-slate-300 hover:text-cyan-300 hover:bg-[#131b2e] border border-cyan-500/10'
-              }`}
-            >
-              {cat.name} ({cat.productCount})
-            </motion.button>
-          ))}
+          {categories.map((cat) => {
+            const dynamicCount = products.filter((p) => p.category === cat.name).length;
+            return (
+              <motion.button
+                key={cat.id}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => onSelectCategory(cat.name)}
+                className={`px-4 py-2 text-xs font-medium rounded-xl whitespace-nowrap shrink-0 transition-all cursor-pointer ${
+                  selectedCategory === cat.name
+                    ? 'bg-gradient-to-r from-cyan-400 to-emerald-400 text-slate-950 font-bold shadow-md'
+                    : 'bg-[#0d121f] text-slate-300 hover:text-cyan-300 hover:bg-[#131b2e] border border-cyan-500/10'
+                }`}
+              >
+                {cat.name} ({dynamicCount})
+              </motion.button>
+            );
+          })}
         </div>
 
         {/* Search & Sort Controls Row */}

@@ -34,13 +34,16 @@ export interface Product {
   imageUrl: string;
   secondaryImages?: string[];
   features: string[];
-  specifications: Record<string, string>;
+  specifications?: Record<string, string>;
   deliveryType: DeliveryType;
   fileName?: string;
   fileSizeMb?: number;
+  downloadUrl?: string;
+  fileData?: string;
   r2ObjectKey?: string;
   accessUrl?: string;
   customInstructions?: string;
+  licenseKeys?: string[];
   licenseKeysAvailable?: number;
   isFeatured: boolean;
   isBestSeller: boolean;

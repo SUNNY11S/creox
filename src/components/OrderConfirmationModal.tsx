@@ -150,11 +150,13 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({
                     <div className="flex items-center gap-3">
                       <a
                         href={item.downloadUrl}
-                        download
-                        className="flex-1 py-3 px-4 bg-gradient-to-r from-cyan-500 to-blue-600 hover:opacity-95 text-white font-bold text-xs rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
+                        target={item.downloadUrl.startsWith('http') ? '_blank' : undefined}
+                        rel="noopener noreferrer"
+                        download={item.downloadUrl.startsWith('data:') ? `${(item.productName || 'creox_product').toLowerCase().replace(/[^a-z0-9]+/g, '_')}_package.txt` : undefined}
+                        className="flex-1 py-3 px-4 bg-gradient-to-r from-cyan-500 to-blue-600 hover:opacity-95 text-white font-bold text-xs rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
                       >
                         <Download className="w-4 h-4" />
-                        <span>Download Digital File Now</span>
+                        <span>{item.downloadUrl.startsWith('http') ? 'Open & Download Digital File' : 'Download Digital File Now'}</span>
                       </a>
                     </div>
                   </div>
