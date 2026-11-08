@@ -1644,6 +1644,18 @@ app.get('/api/orders/:id', (req: Request, res: Response) => {
   res.json(order);
 });
 
+app.delete('/api/orders/:id', adminAuth, (req: Request, res: Response) => {
+  const index = db.orders.findIndex((o) => o.id === req.params.id || o.orderNumber === req.params.id);
+  if (index === -1) return res.status(404).json({ error: 'Order not found' });
+  const deleted = db.orders.splice(index, 1)[0];
+  res.json({ success: true, message: `Order ${deleted.orderNumber} deleted successfully` });
+});
+
+app.delete('/api/orders', adminAuth, (req: Request, res: Response) => {
+  db.orders = [];
+  res.json({ success: true, message: 'All orders cleared' });
+});
+
 // --- Customer Management Routes ---
 app.get('/api/customers', adminAuth, (req: Request, res: Response) => {
   res.json(db.customers);

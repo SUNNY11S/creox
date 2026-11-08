@@ -35,7 +35,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [activeTab, setActiveTab] = useState<'overview' | 'products' | 'orders' | 'storage' | 'customers' | 'categories' | 'settings'>('overview');
 
   // Data states
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [orders, setOrders] = useState<Order[]>(() => {
+    try {
+      const saved = localStorage.getItem('creox_saved_orders');
+      if (saved !== null) return JSON.parse(saved);
+    } catch {
+      // ignore
+    }
+    return initialOrders;
+  });
+  const [orderToDelete, setOrderToDelete] = useState<Order | null>(null);
+  const [confirmClearAllOrders, setConfirmClearAllOrders] = useState(false);
+  const [orderCrudFeedback, setOrderCrudFeedback] = useState<string | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [storageStats, setStorageStats] = useState<StorageStats | null>(null);
   const [systemStatus, setSystemStatus] = useState<any>(null);
@@ -212,13 +223,39 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           .catch(() => null),
       ]);
 
-      setOrders(Array.isArray(ordersRes) ? ordersRes : initialOrders);
+      // Load orders: priority to localStorage so deleted orders stay deleted permanently on Vercel
+      const localSavedOrders = localStorage.getItem('creox_saved_orders');
+      if (localSavedOrders !== null) {
+        try {
+          setOrders(JSON.parse(localSavedOrders));
+        } catch {
+          setOrders(Array.isArray(ordersRes) ? ordersRes : initialOrders);
+        }
+      } else {
+        const defaultList = Array.isArray(ordersRes) ? ordersRes : initialOrders;
+        setOrders(defaultList);
+        try {
+          localStorage.setItem('creox_saved_orders', JSON.stringify(defaultList));
+        } catch {
+          // ignore
+        }
+      }
+
       setCustomers(Array.isArray(custRes) ? custRes : initialCustomers);
       setStorageStats(storRes && !storRes.error ? storRes : initialStorageStats);
       if (statusRes) setSystemStatus(statusRes);
       if (settRes) setSettings(settRes);
     } catch (err) {
-      setOrders(initialOrders);
+      const localSavedOrders = localStorage.getItem('creox_saved_orders');
+      if (localSavedOrders !== null) {
+        try {
+          setOrders(JSON.parse(localSavedOrders));
+        } catch {
+          setOrders(initialOrders);
+        }
+      } else {
+        setOrders(initialOrders);
+      }
       setCustomers(initialCustomers);
       setStorageStats(initialStorageStats);
     } finally {
@@ -454,6 +491,51 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     // Try server sync
     try {
       await fetch(`/api/products/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+    } catch {
+      // Backend is static on Vercel
+    }
+  };
+
+  const executeDeleteOrder = async (orderId: string) => {
+    const remaining = orders.filter((o) => o.id !== orderId && o.orderNumber !== orderId);
+    setOrders(remaining);
+    try {
+      localStorage.setItem('creox_saved_orders', JSON.stringify(remaining));
+    } catch {
+      // ignore
+    }
+
+    setOrderToDelete(null);
+    setOrderCrudFeedback('Order deleted successfully.');
+    setTimeout(() => setOrderCrudFeedback(null), 3000);
+
+    try {
+      await fetch(`/api/orders/${orderId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+    } catch {
+      // Backend is static on Vercel
+    }
+  };
+
+  const executeClearAllOrders = async () => {
+    setOrders([]);
+    try {
+      localStorage.setItem('creox_saved_orders', JSON.stringify([]));
+    } catch {
+      // ignore
+    }
+
+    setConfirmClearAllOrders(false);
+    setOrderCrudFeedback('All orders have been cleared.');
+    setTimeout(() => setOrderCrudFeedback(null), 3000);
+
+    try {
+      await fetch('/api/orders', {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${authToken}` },
       });
@@ -1183,15 +1265,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </p>
                 </div>
 
-                {/* Filter and Search */}
-                <div className="flex items-center gap-3">
-                  <input
-                    type="text"
-                    value={orderSearch}
-                    onChange={(e) => setOrderSearch(e.target.value)}
-                    placeholder="Search Order ID, Email, TrxID..."
-                    className="bg-[#0a1120] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400"
-                  />
+                {/* Filter, Search, and Clear All */}
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={orderSearch}
+                      onChange={(e) => setOrderSearch(e.target.value)}
+                      placeholder="Search Order, Email, TrxID..."
+                      className="bg-[#0a1120] border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400"
+                    />
+                  </div>
                   <select
                     value={orderStatusFilter}
                     onChange={(e) => setOrderStatusFilter(e.target.value)}
@@ -1202,8 +1286,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <option value="PENDING">Pending</option>
                     <option value="FAILED">Failed</option>
                   </select>
+
+                  {orders.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmClearAllOrders(true)}
+                      className="px-3 py-1.5 text-xs font-semibold text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 rounded-xl border border-red-500/20 transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                      title="Clear all test / existing orders"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                      <span>Clear All ({orders.length})</span>
+                    </button>
+                  )}
                 </div>
               </div>
+
+              {/* Order Feedback Alert */}
+              {orderCrudFeedback && (
+                <div className="p-3 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>{orderCrudFeedback}</span>
+                </div>
+              )}
 
               {/* Orders Table */}
               <div className="rounded-2xl bg-[#0d1629] border border-white/[0.08] overflow-hidden">
@@ -1218,65 +1322,86 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <th className="p-3.5">Payment</th>
                       <th className="p-3.5">Delivery Status</th>
                       <th className="p-3.5">Date</th>
+                      <th className="p-3.5 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
-                    {filteredOrders.map((ord) => (
-                      <tr key={ord.id} className="hover:bg-white/[0.02]">
-                        <td className="p-3.5 font-mono font-bold text-white">{ord.orderNumber}</td>
-                        <td className="p-3.5 text-slate-300">
-                          <p className="font-semibold text-white">{ord.customerName}</p>
-                          <p className="text-[10px] text-slate-400 font-mono">{ord.customerPhone}</p>
-                          <p className="text-[10px] text-slate-500">{ord.customerEmail}</p>
-                        </td>
-                        <td className="p-3.5">
-                          {ord.items.map((it) => (
-                            <div key={it.id} className="text-slate-300">
-                              <span>{it.productName}</span>{' '}
-                              <span className="text-slate-500 font-mono">x{it.quantity}</span>
-                              {it.assignedKey && (
-                                <p className="text-[10px] text-cyan-400 font-mono font-bold">
-                                  Key: {it.assignedKey}
-                                </p>
-                              )}
-                            </div>
-                          ))}
-                        </td>
-                        <td className="p-3.5 font-bold text-white tabular-nums">
-                          ৳{ord.totalAmount.toLocaleString()}
-                        </td>
-                        <td className="p-3.5 font-mono text-cyan-300 font-bold">
-                          {ord.bkashTrxId || '—'}
-                        </td>
-                        <td className="p-3.5">
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                              ord.paymentStatus === 'PAID'
-                                ? 'bg-emerald-500/20 text-emerald-400'
-                                : ord.paymentStatus === 'PENDING'
-                                ? 'bg-amber-500/20 text-amber-400'
-                                : 'bg-red-500/20 text-red-400'
-                            }`}
-                          >
-                            {ord.paymentStatus}
-                          </span>
-                        </td>
-                        <td className="p-3.5">
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                              ord.deliveryStatus === 'DELIVERED'
-                                ? 'bg-cyan-500/20 text-cyan-400'
-                                : 'bg-slate-700 text-slate-300'
-                            }`}
-                          >
-                            {ord.deliveryStatus}
-                          </span>
-                        </td>
-                        <td className="p-3.5 text-slate-500 text-[11px]">
-                          {new Date(ord.createdAt).toLocaleString()}
+                    {filteredOrders.length === 0 ? (
+                      <tr>
+                        <td colSpan={9} className="p-8 text-center text-slate-500">
+                          <p className="font-semibold text-slate-400 text-sm">No orders found</p>
+                          <p className="text-xs mt-1">Orders placed by customers will appear here.</p>
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      filteredOrders.map((ord) => (
+                        <tr key={ord.id} className="hover:bg-white/[0.02]">
+                          <td className="p-3.5 font-mono font-bold text-white">{ord.orderNumber}</td>
+                          <td className="p-3.5 text-slate-300">
+                            <p className="font-semibold text-white">{ord.customerName}</p>
+                            <p className="text-[10px] text-slate-400 font-mono">{ord.customerPhone}</p>
+                            <p className="text-[10px] text-slate-500">{ord.customerEmail}</p>
+                          </td>
+                          <td className="p-3.5">
+                            {ord.items.map((it) => (
+                              <div key={it.id} className="text-slate-300">
+                                <span>{it.productName}</span>{' '}
+                                <span className="text-slate-500 font-mono">x{it.quantity}</span>
+                                {it.assignedKey && (
+                                  <p className="text-[10px] text-cyan-400 font-mono font-bold">
+                                    Key: {it.assignedKey}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </td>
+                          <td className="p-3.5 font-bold text-white tabular-nums">
+                            ৳{ord.totalAmount.toLocaleString()}
+                          </td>
+                          <td className="p-3.5 font-mono text-cyan-300 font-bold">
+                            {ord.bkashTrxId || '—'}
+                          </td>
+                          <td className="p-3.5">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                ord.paymentStatus === 'PAID'
+                                  ? 'bg-emerald-500/20 text-emerald-400'
+                                  : ord.paymentStatus === 'PENDING'
+                                  ? 'bg-amber-500/20 text-amber-400'
+                                  : 'bg-red-500/20 text-red-400'
+                              }`}
+                            >
+                              {ord.paymentStatus}
+                            </span>
+                          </td>
+                          <td className="p-3.5">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                ord.deliveryStatus === 'DELIVERED'
+                                  ? 'bg-cyan-500/20 text-cyan-400'
+                                  : 'bg-slate-700 text-slate-300'
+                              }`}
+                            >
+                              {ord.deliveryStatus}
+                            </span>
+                          </td>
+                          <td className="p-3.5 text-slate-500 text-[11px]">
+                            {new Date(ord.createdAt).toLocaleString()}
+                          </td>
+                          <td className="p-3.5 text-right">
+                            <button
+                              type="button"
+                              onClick={() => setOrderToDelete(ord)}
+                              className="px-2.5 py-1 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1 text-xs border border-transparent hover:border-red-500/20"
+                              title="Delete this order"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                              <span className="text-[11px] text-red-400 font-semibold">Delete</span>
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -2297,6 +2422,101 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>Delete Now</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Order In-App Confirmation Modal */}
+      {orderToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="w-full max-w-sm p-6 rounded-2xl bg-[#12121c] border border-red-500/30 shadow-2xl space-y-4">
+            <div className="w-12 h-12 rounded-full bg-red-500/10 border border-red-500/20 text-red-400 mx-auto flex items-center justify-center">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            <div className="text-center">
+              <h3 className="text-base font-bold text-white">Delete Order Record?</h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Are you sure you want to delete order <strong className="text-white font-mono">{orderToDelete.orderNumber}</strong>?
+              </p>
+            </div>
+
+            <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 text-[11px] text-slate-300 space-y-1">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Customer:</span>
+                <span className="font-semibold text-white">{orderToDelete.customerName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Phone:</span>
+                <span className="font-mono text-pink-300">{orderToDelete.customerPhone}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Amount:</span>
+                <span className="font-bold text-emerald-400">৳{orderToDelete.totalAmount.toLocaleString()} BDT</span>
+              </div>
+              {orderToDelete.bkashTrxId && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500">bKash TrxID:</span>
+                  <span className="font-mono text-cyan-300 font-bold">{orderToDelete.bkashTrxId}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => setOrderToDelete(null)}
+                className="flex-1 py-2.5 text-xs font-semibold text-slate-300 bg-white/[0.06] hover:bg-white/[0.1] rounded-xl transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={() => executeDeleteOrder(orderToDelete.id)}
+                className="flex-1 py-2.5 text-xs font-bold text-white bg-red-600 hover:bg-red-500 rounded-xl transition-all shadow-md cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Delete Order</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clear All Orders Confirmation Modal */}
+      {confirmClearAllOrders && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="w-full max-w-sm p-6 rounded-2xl bg-[#12121c] border border-red-500/40 shadow-2xl space-y-4 text-center">
+            <div className="w-12 h-12 rounded-full bg-red-500/10 border border-red-500/20 text-red-400 mx-auto flex items-center justify-center">
+              <AlertCircle className="w-6 h-6" />
+            </div>
+
+            <div>
+              <h3 className="text-base font-bold text-white">Clear All Orders?</h3>
+              <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">
+                This will permanently delete all <strong className="text-white font-bold">{orders.length} order records</strong> (including all test orders). This cannot be undone.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmClearAllOrders(false)}
+                className="flex-1 py-2.5 text-xs font-semibold text-slate-300 bg-white/[0.06] hover:bg-white/[0.1] rounded-xl transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={executeClearAllOrders}
+                className="flex-1 py-2.5 text-xs font-bold text-white bg-red-600 hover:bg-red-500 rounded-xl transition-all shadow-md cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Yes, Clear All</span>
               </button>
             </div>
           </div>
