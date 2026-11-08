@@ -12,7 +12,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({
   onBrowseCategories,
 }) => {
   return (
-    <section className="relative overflow-hidden pt-8 pb-16 lg:pt-14 lg:pb-24 border-b border-white/[0.06]">
+    <section className="relative w-full max-w-full overflow-hidden pt-8 pb-16 lg:pt-14 lg:pb-24 border-b border-white/[0.06]">
       {/* Dynamic Animated Ambient Glowing Orbs matching screenshot (Coral Orange on left, Purple & Mint on right) */}
       <motion.div
         animate={{

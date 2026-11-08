@@ -66,7 +66,7 @@ export const LivePurchaseTicker: React.FC<LivePurchaseTickerProps> = ({
   if (dismissed) return null;
 
   return (
-    <div className="fixed bottom-6 left-6 z-40 max-w-sm pointer-events-auto">
+    <div className="fixed bottom-4 sm:bottom-6 left-4 sm:left-6 right-4 sm:right-auto z-40 max-w-[calc(100vw-2rem)] sm:max-w-sm pointer-events-auto">
       <AnimatePresence>
         {currentNotification && (
           <motion.div

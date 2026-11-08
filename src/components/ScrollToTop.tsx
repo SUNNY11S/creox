@@ -40,7 +40,7 @@ export const ScrollToTop: React.FC = () => {
           whileHover={{ scale: 1.1, y: -2 }}
           whileTap={{ scale: 0.9 }}
           onClick={scrollToTop}
-          className="fixed bottom-6 right-6 z-40 w-12 h-12 rounded-full creox-glass border border-white/20 text-white shadow-2xl flex items-center justify-center cursor-pointer creox-glow group"
+          className="fixed bottom-4 sm:bottom-6 right-4 sm:right-6 z-40 w-11 h-11 sm:w-12 sm:h-12 rounded-full creox-glass border border-white/20 text-white shadow-2xl flex items-center justify-center cursor-pointer creox-glow group"
           aria-label="Scroll to top"
         >
           {/* Circular progress SVG */}

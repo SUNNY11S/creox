@@ -264,15 +264,15 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#050811] text-slate-100 flex flex-col font-sans relative selection:bg-cyan-500 selection:text-slate-950">
+    <div className="min-h-screen bg-[#050811] text-slate-100 flex flex-col font-sans relative selection:bg-cyan-500 selection:text-slate-950 w-full max-w-full overflow-x-hidden">
       
       {/* Interactive Canvas Particle Field */}
       <ParticleBackground />
 
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-20 z-50 p-4 rounded-xl bg-[#0c1322] border border-cyan-500/40 text-white shadow-2xl flex items-center gap-3 animate-bounce creox-glow">
-          <div className="w-6 h-6 rounded-full bg-gradient-to-r from-cyan-400 to-emerald-400 text-slate-950 flex items-center justify-center font-bold">
+        <div className="fixed bottom-6 right-4 sm:right-6 left-4 sm:left-auto z-50 p-4 rounded-xl bg-[#0c1322] border border-cyan-500/40 text-white shadow-2xl flex items-center gap-3 animate-bounce creox-glow max-w-sm">
+          <div className="w-6 h-6 rounded-full bg-gradient-to-r from-cyan-400 to-emerald-400 text-slate-950 flex items-center justify-center font-bold shrink-0">
             <Check className="w-4 h-4" />
           </div>
           <span className="text-xs font-semibold">{toastMessage}</span>

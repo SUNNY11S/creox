@@ -49,7 +49,7 @@ export const TestimonialsSection: React.FC<TestimonialsSectionProps> = ({
   };
 
   return (
-    <section id="reviews" className="py-24 border-b border-white/[0.06] bg-[#050508] relative overflow-hidden">
+    <section id="reviews" className="py-24 border-b border-white/[0.06] bg-[#050508] relative w-full max-w-full overflow-hidden">
       {/* Subtle ambient light */}
       <motion.div
         initial={{ opacity: 0 }}

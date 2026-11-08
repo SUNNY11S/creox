@@ -43,7 +43,7 @@ export const WhyChooseUs: React.FC = () => {
   ];
 
   return (
-    <section id="why-us" className="py-24 border-b border-white/[0.06] bg-[#050508] relative overflow-hidden">
+    <section id="why-us" className="py-24 border-b border-white/[0.06] bg-[#050508] relative w-full max-w-full overflow-hidden">
       {/* Ambient background glows */}
       <motion.div
         initial={{ opacity: 0 }}

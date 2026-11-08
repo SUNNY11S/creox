@@ -30,7 +30,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-40 w-full creox-glass border-b border-white/[0.08] backdrop-blur-xl">
+    <header className="sticky top-0 z-40 w-full max-w-full overflow-hidden creox-glass border-b border-white/[0.08] backdrop-blur-xl">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-20 gap-4">
           

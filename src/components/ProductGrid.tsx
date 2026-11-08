@@ -59,7 +59,7 @@ export const ProductGrid: React.FC<ProductGridProps> = ({
   });
 
   return (
-    <section id="products" className="py-16 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <section id="products" className="py-16 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full max-w-full overflow-hidden">
       
       {/* Section Header */}
       <motion.div
@@ -120,9 +120,9 @@ export const ProductGrid: React.FC<ProductGridProps> = ({
       </motion.div>
 
       {/* Filter and Category Navigation Bar */}
-      <div className="py-6 space-y-4">
+      <div className="py-6 space-y-4 w-full max-w-full overflow-hidden">
         {/* Dynamic Categories Scrollable Bar */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none w-full max-w-full">
           <motion.button
             whileTap={{ scale: 0.95 }}
             onClick={() => onSelectCategory('All')}
