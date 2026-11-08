@@ -30,7 +30,7 @@ export default function App() {
   const [products, setProducts] = useState<Product[]>(() => {
     try {
       const saved = localStorage.getItem('creox_saved_products');
-      return saved ? JSON.parse(saved) : initialProducts;
+      return saved !== null ? JSON.parse(saved) : initialProducts;
     } catch {
       return initialProducts;
     }
@@ -91,7 +91,7 @@ export default function App() {
     try {
       // 1. Fetch live cloud products from Firestore
       const cloudProds = await getFirestoreProducts();
-      if (cloudProds && cloudProds.length > 0) {
+      if (Array.isArray(cloudProds)) {
         setProducts(cloudProds);
       }
 
@@ -115,7 +115,7 @@ export default function App() {
     loadInitialData();
     // Real-time synchronization across all browsers, devices, and customers
     const unsubscribe = subscribeFirestoreProducts((liveProds) => {
-      if (liveProds && liveProds.length > 0) {
+      if (Array.isArray(liveProds)) {
         setProducts(liveProds);
       }
     });

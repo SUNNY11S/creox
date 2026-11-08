@@ -11,6 +11,7 @@ import {
 import {
   saveFirestoreProduct,
   deleteFirestoreProduct,
+  subscribeFirestoreProducts,
   getFirestoreOrders,
   deleteFirestoreOrder,
   saveFirestoreBkashConfig,
@@ -280,14 +281,74 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Local products state for instant reactivity on Vercel & local
   const [localProducts, setLocalProducts] = useState<Product[]>(products);
   const [productCrudFeedback, setProductCrudFeedback] = useState<string | null>(null);
+  const [productSaveLoading, setProductSaveLoading] = useState(false);
+  const [isCompressingImg, setIsCompressingImg] = useState(false);
+  const [productFormError, setProductFormError] = useState<string | null>(null);
+  const [isDeletingProduct, setIsDeletingProduct] = useState(false);
 
   useEffect(() => {
     setLocalProducts(products);
   }, [products]);
 
+  // Live Cloud Firestore subscription to sync admin view across devices and browser tabs
+  useEffect(() => {
+    const unsubscribe = subscribeFirestoreProducts((live) => {
+      if (Array.isArray(live)) {
+        setLocalProducts(live);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Image compressor helper: converts any high-res phone/PC image into a lightweight ~40-70KB JPEG
+  const compressImage = (file: File, maxWidth = 900, maxHeight = 900, quality = 0.78): Promise<string> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > maxWidth) {
+              height = Math.round((height * maxWidth) / width);
+              width = maxWidth;
+            }
+          } else {
+            if (height > maxHeight) {
+              width = Math.round((width * maxHeight) / height);
+              height = maxHeight;
+            }
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(e.target?.result as string);
+            return;
+          }
+          ctx.fillStyle = '#0a0f1d';
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', quality);
+          resolve(dataUrl);
+        };
+        img.onerror = () => resolve(e.target?.result as string);
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(file);
+    });
+  };
+
   // Product CRUD
   const handleOpenAddProduct = () => {
     setEditingProduct(null);
+    setProductFormError(null);
+    setProductSaveLoading(false);
     setProductForm({
       name: '',
       category: categories[0]?.name || 'Software & Applications',
@@ -314,6 +375,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const handleOpenEditProduct = (p: Product) => {
     setEditingProduct(p);
+    setProductFormError(null);
+    setProductSaveLoading(false);
     setProductForm({
       name: p.name,
       category: p.category,
@@ -369,20 +432,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  // Handle product cover image uploaded from Computer or Phone
-  const handleProductImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle product cover image uploaded from Computer or Phone with auto-compression
+  const handleProductImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
+    setIsCompressingImg(true);
+    setProductFormError(null);
+    try {
+      const compressed = await compressImage(file, 900, 900, 0.78);
       setProductForm((prev: any) => ({
         ...prev,
-        imageUrl: result,
+        imageUrl: compressed,
       }));
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setProductForm((prev: any) => ({
+          ...prev,
+          imageUrl: reader.result as string,
+        }));
+      };
+      reader.readAsDataURL(file);
+    } finally {
+      setIsCompressingImg(false);
+    }
   };
 
   const handleSaveProduct = async (e: React.FormEvent) => {
@@ -390,132 +464,141 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (!productForm.name.trim()) {
       return;
     }
+    setProductSaveLoading(true);
+    setProductFormError(null);
 
-    const priceNum = parseFloat(productForm.price) || 990;
-    const origPriceNum = parseFloat(productForm.originalPrice) || Math.round(priceNum * 1.5);
-    const discount = origPriceNum > priceNum ? Math.round(((origPriceNum - priceNum) / origPriceNum) * 100) : 0;
-    const slug = productForm.name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '') || `prod-${Date.now()}`;
-
-    const defaultImg = productForm.imageUrl.trim() || '/assets/images/creox_hero_showcase_1793972157432.jpg';
-    const fallbackDesc = productForm.description.trim() || `${productForm.name} — Premium digital asset with instant automated delivery.`;
-    const parsedFeatures = productForm.features
-      ? productForm.features.split('\n').map((f: string) => f.trim()).filter(Boolean)
-      : ['Instant automated digital delivery', 'Verified genuine digital license / asset', '24/7 Support access'];
-
-    const newProd: Product = {
-      id: editingProduct ? editingProduct.id : `prod_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      name: productForm.name.trim(),
-      slug,
-      category: productForm.category,
-      description: fallbackDesc,
-      shortDescription: productForm.shortDescription.trim() || fallbackDesc.slice(0, 80),
-      price: priceNum,
-      originalPrice: origPriceNum,
-      discountPercentage: discount,
-      imageUrl: defaultImg,
-      features: parsedFeatures,
-      deliveryType: productForm.deliveryType || 'zip_download',
-      fileName: productForm.fileName.trim() || `${slug}.zip`,
-      fileSizeMb: parseFloat(productForm.fileSizeMb) || 45.0,
-      downloadUrl: productForm.downloadUrl?.trim() || undefined,
-      fileData: productForm.fileData || undefined,
-      accessUrl: productForm.accessUrl?.trim() || productForm.downloadUrl?.trim() || (productForm.deliveryType === 'access_link' ? 'https://creox.digital/access' : undefined),
-      customInstructions: productForm.customInstructions?.trim() || undefined,
-      licenseKeys: productForm.licenseKeys
-        ? productForm.licenseKeys.split('\n').map((k: string) => k.trim()).filter(Boolean)
-        : (productForm.deliveryType === 'license_key' ? [`CRX-KEY-${Math.random().toString(36).substring(2, 7).toUpperCase()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`] : undefined),
-      isFeatured: Boolean(productForm.isFeatured),
-      isBestSeller: Boolean(productForm.isBestSeller),
-      isActive: productForm.isActive !== false,
-      totalSales: editingProduct ? editingProduct.totalSales : 0,
-      rating: editingProduct ? editingProduct.rating : 5.0,
-      reviewCount: editingProduct ? editingProduct.reviewCount : 1,
-      createdAt: editingProduct ? editingProduct.createdAt : new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    // 1. Immediately update local state & browser storage so it works permanently on Vercel
-    let updatedList: Product[];
-    if (editingProduct) {
-      updatedList = localProducts.map((p) => (p.id === editingProduct.id ? newProd : p));
-    } else {
-      updatedList = [newProd, ...localProducts];
-    }
-
-    setLocalProducts(updatedList);
     try {
-      localStorage.setItem('creox_saved_products', JSON.stringify(updatedList));
-    } catch {
-      // ignore
-    }
+      const priceNum = parseFloat(productForm.price) || 990;
+      const origPriceNum = parseFloat(productForm.originalPrice) || Math.round(priceNum * 1.5);
+      const discount = origPriceNum > priceNum ? Math.round(((origPriceNum - priceNum) / origPriceNum) * 100) : 0;
+      const slug = productForm.name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, '') || `prod-${Date.now()}`;
 
-    if (onProductsUpdated) {
-      onProductsUpdated(updatedList);
-    }
+      const defaultImg = productForm.imageUrl?.trim() || '/assets/images/creox_hero_showcase_1793972157432.jpg';
+      const fallbackDesc = productForm.description?.trim() || `${productForm.name} — Premium digital asset with instant automated delivery.`;
+      const parsedFeatures = productForm.features
+        ? productForm.features.split('\n').map((f: string) => f.trim()).filter(Boolean)
+        : ['Instant automated digital delivery', 'Verified genuine digital license / asset', '24/7 Support access'];
 
-    // Cloud Firestore Sync (instantly available to all visitors, devices & browsers)
-    saveFirestoreProduct(newProd);
-
-    setProductModalOpen(false);
-    setProductCrudFeedback(editingProduct ? `Updated "${newProd.name}" successfully in Cloud Database!` : `Added "${newProd.name}" to Cloud Database!`);
-    setTimeout(() => setProductCrudFeedback(null), 3500);
-
-    // 2. Try server sync if backend API is online
-    try {
-      const headers = {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${authToken}`,
+      const newProd: Product = {
+        id: editingProduct ? editingProduct.id : `prod_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        name: productForm.name.trim(),
+        slug,
+        category: productForm.category,
+        description: fallbackDesc,
+        shortDescription: productForm.shortDescription?.trim() || fallbackDesc.slice(0, 80),
+        price: priceNum,
+        originalPrice: origPriceNum,
+        discountPercentage: discount,
+        imageUrl: defaultImg,
+        features: parsedFeatures,
+        deliveryType: productForm.deliveryType || 'zip_download',
+        fileName: productForm.fileName?.trim() || `${slug}.zip`,
+        fileSizeMb: parseFloat(productForm.fileSizeMb) || 45.0,
+        downloadUrl: productForm.downloadUrl?.trim() || undefined,
+        fileData: productForm.fileData || undefined,
+        accessUrl: productForm.accessUrl?.trim() || productForm.downloadUrl?.trim() || (productForm.deliveryType === 'access_link' ? 'https://creox.digital/access' : undefined),
+        customInstructions: productForm.customInstructions?.trim() || undefined,
+        licenseKeys: productForm.licenseKeys
+          ? productForm.licenseKeys.split('\n').map((k: string) => k.trim()).filter(Boolean)
+          : (productForm.deliveryType === 'license_key' ? [`CRX-KEY-${Math.random().toString(36).substring(2, 7).toUpperCase()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`] : undefined),
+        isFeatured: Boolean(productForm.isFeatured),
+        isBestSeller: Boolean(productForm.isBestSeller),
+        isActive: productForm.isActive !== false,
+        totalSales: editingProduct ? editingProduct.totalSales : 0,
+        rating: editingProduct ? editingProduct.rating : 5.0,
+        reviewCount: editingProduct ? editingProduct.reviewCount : 1,
+        createdAt: editingProduct ? editingProduct.createdAt : new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       };
+
+      // 1. Immediately update local state & browser storage so it works instantly on Vercel
+      let updatedList: Product[];
       if (editingProduct) {
-        await fetch(`/api/products/${editingProduct.id}`, {
-          method: 'PUT',
-          headers,
-          body: JSON.stringify(newProd),
-        });
+        updatedList = localProducts.map((p) => (p.id === editingProduct.id ? newProd : p));
       } else {
-        await fetch('/api/products', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(newProd),
-        });
+        updatedList = [newProd, ...localProducts];
       }
-    } catch {
-      // Backend is static on Vercel
+
+      setLocalProducts(updatedList);
+      try {
+        localStorage.setItem('creox_saved_products', JSON.stringify(updatedList));
+      } catch {}
+
+      if (onProductsUpdated) {
+        onProductsUpdated(updatedList);
+      }
+
+      // 2. Cloud Firestore Sync (Awaited with error protection)
+      await saveFirestoreProduct(newProd);
+
+      setProductModalOpen(false);
+      setProductCrudFeedback(editingProduct ? `Updated "${newProd.name}" successfully in Cloud Database!` : `Added "${newProd.name}" to Cloud Database!`);
+      setTimeout(() => setProductCrudFeedback(null), 3500);
+
+      // 3. Try server sync if backend API is online
+      try {
+        const headers = {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        };
+        if (editingProduct) {
+          await fetch(`/api/products/${editingProduct.id}`, {
+            method: 'PUT',
+            headers,
+            body: JSON.stringify(newProd),
+          });
+        } else {
+          await fetch('/api/products', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(newProd),
+          });
+        }
+      } catch {}
+    } catch (err: any) {
+      console.error('Failed to save product:', err);
+      setProductFormError(err?.message || 'Failed to save product to Cloud Database. Please check connection.');
+    } finally {
+      setProductSaveLoading(false);
     }
   };
 
   const executeDeleteProduct = async (id: string) => {
-    // Immediately filter out from local state & browser storage
-    const remaining = localProducts.filter((p) => p.id !== id);
-    setLocalProducts(remaining);
+    setIsDeletingProduct(true);
     try {
-      localStorage.setItem('creox_saved_products', JSON.stringify(remaining));
-    } catch {
-      // ignore
-    }
+      // Immediately filter out from local state & browser storage
+      const remaining = localProducts.filter((p) => p.id !== id);
+      setLocalProducts(remaining);
+      try {
+        localStorage.setItem('creox_saved_products', JSON.stringify(remaining));
+      } catch {}
 
-    if (onProductsUpdated) {
-      onProductsUpdated(remaining);
-    }
+      if (onProductsUpdated) {
+        onProductsUpdated(remaining);
+      }
 
-    // Cloud Firestore Permanent Delete
-    deleteFirestoreProduct(id);
+      // Cloud Firestore Permanent Delete
+      await deleteFirestoreProduct(id);
 
-    setProductToDelete(null);
-    setProductCrudFeedback('Product permanently deleted from Cloud Database.');
-    setTimeout(() => setProductCrudFeedback(null), 3000);
+      setProductToDelete(null);
+      setProductCrudFeedback('Product permanently deleted from Cloud Database.');
+      setTimeout(() => setProductCrudFeedback(null), 3000);
 
-    // Try server sync
-    try {
-      await fetch(`/api/products/${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${authToken}` },
-      });
-    } catch {
-      // Backend is static on Vercel
+      // Try server sync
+      try {
+        await fetch(`/api/products/${id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${authToken}` },
+        });
+      } catch {}
+    } catch (err: any) {
+      console.error('Failed to delete product:', err);
+      setProductCrudFeedback('Failed to delete from Cloud Database. Please check connection.');
+    } finally {
+      setIsDeletingProduct(false);
     }
   };
 
@@ -2125,16 +2208,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <div className="flex flex-wrap items-center gap-2">
                       <label className="px-3.5 py-1.5 bg-gradient-to-r from-cyan-400 to-emerald-400 hover:opacity-95 text-slate-950 rounded-xl text-xs font-bold cursor-pointer transition-all shadow-md flex items-center gap-1.5 shrink-0">
                         <Upload className="w-3.5 h-3.5 text-slate-950" />
-                        <span>Upload Image File</span>
+                        <span>{isCompressingImg ? 'Compressing...' : 'Upload Image File'}</span>
                         <input
                           type="file"
                           accept="image/*"
+                          disabled={isCompressingImg}
                           className="hidden"
                           onChange={handleProductImageUpload}
                         />
                       </label>
 
-                      <span className="text-[11px] text-slate-400">or paste image link below:</span>
+                      {isCompressingImg && (
+                        <span className="text-[11px] text-cyan-300 font-medium animate-pulse">
+                          Optimizing image for fast delivery...
+                        </span>
+                      )}
+
+                      {!isCompressingImg && (
+                        <span className="text-[11px] text-slate-400">or paste image link below:</span>
+                      )}
                     </div>
 
                     <input
@@ -2352,6 +2444,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </label>
               </div>
 
+              {productFormError && (
+                <div className="p-3 text-xs rounded-xl bg-red-950/40 border border-red-500/30 text-red-300 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+                  <span>{productFormError}</span>
+                </div>
+              )}
+
               <div className="pt-4 border-t border-white/10 flex items-center justify-end gap-3">
                 <button
                   type="button"
@@ -2362,9 +2461,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-gradient-to-r from-cyan-400 to-emerald-400 hover:opacity-95 text-slate-950 rounded-xl font-extrabold shadow-md cursor-pointer"
+                  disabled={productSaveLoading || isCompressingImg}
+                  className="px-5 py-2 bg-gradient-to-r from-cyan-400 to-emerald-400 hover:opacity-95 text-slate-950 rounded-xl font-extrabold shadow-md cursor-pointer disabled:opacity-50 flex items-center gap-2"
                 >
-                  Save Product
+                  {productSaveLoading ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving to Cloud...</span>
+                    </>
+                  ) : (
+                    <span>Save Product</span>
+                  )}
                 </button>
               </div>
             </form>
@@ -2445,11 +2552,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               <button
                 type="button"
+                disabled={isDeletingProduct}
                 onClick={() => executeDeleteProduct(productToDelete.id)}
-                className="flex-1 py-2.5 text-xs font-bold text-white bg-red-600 hover:bg-red-500 rounded-xl transition-all shadow-md cursor-pointer flex items-center justify-center gap-1.5"
+                className="flex-1 py-2.5 text-xs font-bold text-white bg-red-600 hover:bg-red-500 rounded-xl transition-all shadow-md cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
               >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Delete Now</span>
+                {isDeletingProduct ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Now</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
