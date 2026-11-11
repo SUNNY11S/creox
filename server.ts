@@ -7,6 +7,13 @@ import { fileURLToPath } from 'url';
 import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createClient } from '@supabase/supabase-js';
+import {
+  createUddoktaPayCharge,
+  verifyUddoktaPayPayment,
+  validateUddoktaPayWebhook,
+  syncOrderToSupabase,
+  getUddoktaPayConfig,
+} from './src/services/uddoktapayService';
 
 dotenv.config();
 
@@ -710,6 +717,11 @@ function fulfillOrder(orderId: string): { success: boolean; order: any } {
     console.error('[Email Notification Error]', err)
   );
 
+  // Sync order to Supabase PostgreSQL database
+  syncOrderToSupabase(order).catch((err) =>
+    console.error('[Supabase Sync Error]', err)
+  );
+
   return { success: true, order };
 }
 
@@ -830,6 +842,11 @@ app.get('/api/status', (req: Request, res: Response) => {
         configured: isR2Configured,
         bucket: r2BucketName,
         status: isR2Configured ? 'Connected (S3 Private Bucket)' : 'Virtual Private Vault Active (Add R2 credentials in .env)',
+      },
+      uddoktapay: {
+        configured: Boolean(process.env.UDDOKTAPAY_API_KEY),
+        baseUrl: process.env.UDDOKTAPAY_BASE_URL || 'https://creox.paymently.io/api',
+        status: process.env.UDDOKTAPAY_API_KEY ? 'Active (Automated bKash / Nagad / Rocket / Cards)' : 'Not Configured',
       },
       bKash: {
         configured: isBkashLiveConfigured,
@@ -1493,6 +1510,229 @@ app.get('/api/payment/bkash/query/:paymentID', async (req: Request, res: Respons
   });
 });
 
+// =========================================================================
+// UDDOKTAPAY OFFICIAL AUTOMATED GATEWAY (bKash / Nagad / Rocket / Cards)
+// =========================================================================
+
+// Check UddoktaPay Configuration Status
+app.get('/api/payment/uddoktapay/status', (req: Request, res: Response) => {
+  const config = getUddoktaPayConfig();
+  res.json({
+    isConfigured: config.isConfigured,
+    baseUrl: config.apiBaseUrl,
+    supportedMethods: ['bKash', 'Nagad', 'Rocket', 'Upay', 'Visa', 'Mastercard'],
+  });
+});
+
+// 1. Create Charge API (/checkout-v2)
+app.post('/api/payment/uddoktapay/create', async (req: Request, res: Response) => {
+  const { customerName, customerEmail, customerPhone, items, totalAmount } = req.body;
+
+  if (!customerEmail || !items || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'Customer email and cart items are required' });
+  }
+
+  const amount = parseFloat(totalAmount) || items.reduce((s: number, i: any) => s + (i.product?.price || i.price || 0) * (i.quantity || 1), 0);
+  const orderNumber = `CRX-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
+  const orderId = `ord_${Date.now()}`;
+
+  // Build order items
+  const orderItems = items.map((item: any) => ({
+    id: `item-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+    productId: item.product?.id || item.productId,
+    productName: item.product?.name || item.productName || 'Digital Product',
+    productImage: item.product?.imageUrl || item.productImage || '/assets/images/creox_hero_showcase_1793972157432.jpg',
+    price: item.product?.price || item.price || 0,
+    quantity: item.quantity || 1,
+    deliveryType: item.product?.deliveryType || item.deliveryType || 'zip_download',
+  }));
+
+  // Create pending order record in database
+  const orderRecord: any = {
+    id: orderId,
+    orderNumber,
+    customerName: customerName || 'Valued Customer',
+    customerEmail: customerEmail.trim().toLowerCase(),
+    customerPhone: customerPhone || '',
+    totalAmount: amount,
+    currency: 'BDT',
+    paymentStatus: 'PENDING',
+    deliveryStatus: 'PENDING',
+    paymentGateway: 'uddoktapay',
+    items: orderItems,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  db.orders.unshift(orderRecord);
+
+  // Determine application base URL
+  const host = req.get('host') || 'localhost:3000';
+  const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
+  const defaultAppUrl = `${protocol}://${host}`;
+  const appUrl = process.env.APP_URL || defaultAppUrl;
+
+  // Call official UddoktaPay Create Charge API
+  const chargeResult = await createUddoktaPayCharge({
+    fullName: customerName || 'Valued Customer',
+    email: customerEmail.trim().toLowerCase(),
+    amount,
+    customerPhone: customerPhone || '',
+    orderId,
+    orderNumber,
+    appUrl,
+  });
+
+  if (!chargeResult.success || !chargeResult.paymentUrl) {
+    console.error('[UddoktaPay Create Charge Failed]', chargeResult);
+    return res.status(502).json({
+      success: false,
+      error: chargeResult.error || 'Failed to initialize UddoktaPay payment gateway',
+      details: chargeResult.raw,
+    });
+  }
+
+  // Save invoice ID to order
+  orderRecord.uddoktapayInvoiceId = chargeResult.invoiceId;
+
+  res.json({
+    success: true,
+    paymentUrl: chargeResult.paymentUrl,
+    invoiceId: chargeResult.invoiceId,
+    orderId,
+    orderNumber,
+    amount,
+  });
+});
+
+// 2. Verify Payment API (/verify-payment)
+app.post('/api/payment/uddoktapay/verify', async (req: Request, res: Response) => {
+  const { invoiceId, orderId } = req.body;
+
+  if (!invoiceId && !orderId) {
+    return res.status(400).json({ error: 'invoiceId or orderId is required for verification' });
+  }
+
+  // Find order
+  let order: any = db.orders.find((o) =>
+    (orderId && o.id === orderId) ||
+    (invoiceId && (o as any).uddoktapayInvoiceId === invoiceId)
+  );
+
+  const targetInvoiceId = invoiceId || order?.uddoktapayInvoiceId;
+  if (!targetInvoiceId) {
+    return res.status(400).json({ error: 'invoiceId could not be identified' });
+  }
+
+  // If already paid and delivered, return current fulfilled state
+  if (order && order.paymentStatus === 'PAID') {
+    return res.json({
+      success: true,
+      order,
+      status: 'COMPLETED',
+      message: 'Payment already verified and digital delivery fulfilled',
+    });
+  }
+
+  // Call official UddoktaPay Verify Payment API server-side
+  const verifyResult = await verifyUddoktaPayPayment(targetInvoiceId);
+
+  if (!verifyResult.success || verifyResult.status !== 'COMPLETED') {
+    return res.status(400).json({
+      success: false,
+      status: verifyResult.status || 'PENDING',
+      error: verifyResult.error || 'Payment not completed or verification failed',
+    });
+  }
+
+  // If order wasn't found in memory yet (e.g. serverless cold start), reconstruct from metadata or verifyResult
+  if (!order) {
+    const meta = verifyResult.metadata || {};
+    order = {
+      id: meta.order_id || `ord_${Date.now()}`,
+      orderNumber: meta.order_number || `CRX-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`,
+      customerName: meta.full_name || 'Valued Customer',
+      customerEmail: verifyResult.raw?.email || 'customer@creox.com',
+      customerPhone: meta.customer_phone || verifyResult.senderNumber || '',
+      totalAmount: parseFloat(verifyResult.amount || '0'),
+      currency: 'BDT',
+      paymentStatus: 'PAID',
+      deliveryStatus: 'PENDING',
+      paymentGateway: 'uddoktapay',
+      uddoktapayInvoiceId: targetInvoiceId,
+      transactionId: verifyResult.transactionId,
+      paymentMethod: verifyResult.paymentMethod,
+      items: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    db.orders.unshift(order);
+  }
+
+  // Mark order as PAID
+  order.paymentStatus = 'PAID';
+  order.paymentGateway = 'uddoktapay';
+  order.uddoktapayInvoiceId = targetInvoiceId;
+  order.transactionId = verifyResult.transactionId;
+  order.paymentMethod = verifyResult.paymentMethod;
+  order.paymentDate = new Date().toISOString();
+  order.updatedAt = new Date().toISOString();
+
+  // Trigger Instant Digital Delivery & Fulfillment
+  const fulfillment = fulfillOrder(order.id);
+
+  res.json({
+    success: true,
+    status: 'COMPLETED',
+    order: fulfillment.order || order,
+    transactionId: verifyResult.transactionId,
+    paymentMethod: verifyResult.paymentMethod,
+    message: 'UddoktaPay payment successfully verified. Digital delivery fulfilled.',
+  });
+});
+
+// 3. Webhook Handler (Validated via RT-UDDOKTAPAY-API-KEY header)
+app.post('/api/payment/uddoktapay/webhook', async (req: Request, res: Response) => {
+  const headerApiKey = (req.headers['rt-uddoktapay-api-key'] || req.headers['RT-UDDOKTAPAY-API-KEY']) as string | undefined;
+
+  // Strict security check: validate incoming header matches official secret
+  if (!validateUddoktaPayWebhook(headerApiKey)) {
+    console.warn('[UddoktaPay Webhook] Rejected unauthorized webhook call. Header did not match.');
+    return res.status(401).json({ error: 'Unauthorized webhook' });
+  }
+
+  const body = req.body || {};
+  const invoiceId = body.invoice_id;
+  const status = (body.status || '').toUpperCase();
+  const transactionId = body.transaction_id || body.trx_id || invoiceId;
+  const paymentMethod = body.payment_method || 'bKash/Nagad';
+  const metadata = body.metadata || {};
+
+  console.log(`[UddoktaPay Webhook] Received webhook for invoice ${invoiceId}, status: ${status}`);
+
+  if (status === 'COMPLETED') {
+    let order: any = db.orders.find((o) =>
+      (metadata.order_id && o.id === metadata.order_id) ||
+      (invoiceId && (o as any).uddoktapayInvoiceId === invoiceId)
+    );
+
+    if (order) {
+      order.paymentStatus = 'PAID';
+      order.paymentGateway = 'uddoktapay';
+      order.uddoktapayInvoiceId = invoiceId;
+      order.transactionId = transactionId;
+      order.paymentMethod = paymentMethod;
+      order.paymentDate = new Date().toISOString();
+      order.updatedAt = new Date().toISOString();
+
+      fulfillOrder(order.id);
+      console.log(`[UddoktaPay Webhook] Order ${order.orderNumber} marked PAID and fulfilled via webhook.`);
+    }
+  }
+
+  res.status(200).json({ success: true, message: 'Webhook received and processed' });
+});
+
 // --- Secure Digital Delivery Download Endpoints ---
 
 // Download file via secure temporary token
@@ -1741,6 +1981,10 @@ async function startServer() {
   });
 }
 
-startServer().catch((err) => {
-  console.error('Fatal server startup failure:', err);
-});
+if (!process.env.VERCEL) {
+  startServer().catch((err) => {
+    console.error('Fatal server startup failure:', err);
+  });
+}
+
+export default app;

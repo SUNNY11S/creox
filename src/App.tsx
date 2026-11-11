@@ -60,6 +60,7 @@ export default function App() {
 
   // Toast Notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
   // Shopping Cart in LocalStorage
   const [cart, setCart] = useState<CartItem[]>(() => {
@@ -83,6 +84,60 @@ export default function App() {
   useEffect(() => {
     if (window.location.hash === '#admin') {
       setAdminOpen(true);
+    }
+  }, []);
+
+  // Handle UddoktaPay Return Callback (?invoice_id=... or ?status=cancelled)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const invoiceId = params.get('invoice_id') || params.get('invoiceId');
+    const orderId = params.get('order_id') || params.get('orderId');
+    const paymentStatus = params.get('payment_status') || params.get('status');
+
+    if (paymentStatus === 'cancelled' || paymentStatus === 'cancel') {
+      showToast('Payment was cancelled. You can retry checkout anytime.');
+      window.history.replaceState({}, document.title, window.location.pathname);
+      return;
+    }
+
+    if (invoiceId) {
+      showToast('Verifying payment with UddoktaPay...');
+      const verifyPayment = async () => {
+        try {
+          const res = await fetch('/api/payment/uddoktapay/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ invoiceId, orderId }),
+          });
+
+          const data = await res.json().catch(() => null);
+
+          if (res.ok && data && (data.success || data.status === 'COMPLETED')) {
+            const finalOrder = data.order;
+            setCart([]);
+            setConfirmedOrder(finalOrder);
+            setConfirmationModalOpen(true);
+            showToast(`Payment Verified! Order #${finalOrder.orderNumber}`);
+
+            try {
+              const existing = localStorage.getItem('creox_saved_orders');
+              const parsed = existing ? JSON.parse(existing) : [];
+              localStorage.setItem('creox_saved_orders', JSON.stringify([finalOrder, ...parsed]));
+            } catch {
+              // ignore
+            }
+          } else {
+            showToast(data?.error || 'Payment verification could not be completed.');
+          }
+        } catch (err) {
+          console.error('[UddoktaPay Client Callback Error]', err);
+          showToast('Failed to connect to verification server. Please contact support.');
+        } finally {
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      };
+
+      verifyPayment();
     }
   }, []);
 
@@ -161,6 +216,65 @@ export default function App() {
   const handleInstantBuy = (product: Product, quantity = 1) => {
     setCart([{ product, quantity }]);
     setCheckoutModalOpen(true);
+  };
+
+  // Proceed from Checkout to official UddoktaPay Automated Gateway (bKash / Nagad / Rocket / Cards)
+  const handleProceedToUddoktaPay = async (customerInfo: {
+    name: string;
+    email: string;
+    phone: string;
+  }) => {
+    setIsProcessingPayment(true);
+    const totalAmount = cart.reduce(
+      (sum, item) => sum + item.product.price * item.quantity,
+      0
+    );
+
+    try {
+      const response = await fetch('/api/payment/uddoktapay/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerName: customerInfo.name,
+          customerEmail: customerInfo.email,
+          customerPhone: customerInfo.phone,
+          items: cart,
+          totalAmount,
+        }),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (response.ok && data && data.paymentUrl) {
+        // Save pending order details in local storage for fail-safe retrieval
+        try {
+          localStorage.setItem(
+            'creox_pending_uddoktapay',
+            JSON.stringify({
+              orderId: data.orderId,
+              orderNumber: data.orderNumber,
+              invoiceId: data.invoiceId,
+              customerInfo,
+              items: cart,
+              totalAmount,
+            })
+          );
+        } catch {
+          // ignore
+        }
+
+        // Redirect customer directly to UddoktaPay hosted checkout page
+        window.location.href = data.paymentUrl;
+        return;
+      }
+
+      showToast(data?.error || 'Unable to connect to UddoktaPay gateway. Please try again.');
+    } catch (err: any) {
+      console.error('[UddoktaPay Checkout Error]', err);
+      showToast('Network error initializing payment. Please try again.');
+    } finally {
+      setIsProcessingPayment(false);
+    }
   };
 
   // Proceed from Checkout to official bKash Merchant API (resilient for both Node and Vercel)
@@ -370,7 +484,9 @@ export default function App() {
         isOpen={checkoutModalOpen}
         onClose={() => setCheckoutModalOpen(false)}
         cart={cart}
+        onProceedToUddoktaPay={handleProceedToUddoktaPay}
         onProceedToBkash={handleProceedToBkash}
+        isProcessingPayment={isProcessingPayment}
       />
 
       {/* 4. Official bKash Merchant Payment Modal */}

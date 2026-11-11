@@ -1186,7 +1186,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             ৳{ord.totalAmount.toLocaleString()}
                           </td>
                           <td className="p-3.5 font-mono text-cyan-300 font-bold">
-                            {ord.bkashTrxId || '—'}
+                            <div>{ord.transactionId || ord.bkashTrxId || '—'}</div>
+                            {ord.paymentGateway && (
+                              <span className="text-[9px] font-sans font-medium text-slate-400 capitalize block">
+                                via {ord.paymentGateway}
+                              </span>
+                            )}
                           </td>
                           <td className="p-3.5">
                             <span
@@ -1470,7 +1475,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             ৳{ord.totalAmount.toLocaleString()}
                           </td>
                           <td className="p-3.5 font-mono text-cyan-300 font-bold">
-                            {ord.bkashTrxId || '—'}
+                            <div>{ord.transactionId || ord.bkashTrxId || '—'}</div>
+                            {ord.paymentGateway && (
+                              <span className="text-[9px] font-sans font-medium text-slate-400 capitalize block">
+                                via {ord.paymentGateway}
+                              </span>
+                            )}
                           </td>
                           <td className="p-3.5">
                             <span
@@ -1787,9 +1797,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </p>
                 </div>
 
+                <div className="p-5 rounded-2xl bg-[#0b1928] border border-cyan-500/30 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-cyan-400" />
+                      <h3 className="text-sm font-bold text-white">3. UddoktaPay Gateway</h3>
+                    </div>
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                        systemStatus?.integrations?.uddoktapay?.configured
+                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                          : 'bg-amber-500/20 text-amber-300'
+                      }`}
+                    >
+                      {systemStatus?.integrations?.uddoktapay?.configured ? 'LIVE ACTIVE' : 'KEY REQUIRED'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    {systemStatus?.integrations?.uddoktapay?.status || 'Active: bKash, Nagad, Rocket, Upay & Cards automated checkout.'}
+                  </p>
+                  <p className="text-[11px] text-cyan-300/80 font-mono truncate">
+                    Base URL: {systemStatus?.integrations?.uddoktapay?.baseUrl || 'https://creox.paymently.io/api'}
+                  </p>
+                </div>
+
                 <div className="p-5 rounded-2xl bg-[#0d1629] border border-white/10 space-y-3">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-bold text-white">3. bKash Merchant Gateway</h3>
+                    <h3 className="text-sm font-bold text-white">4. Direct bKash Gateway</h3>
                     <span
                       className={`text-[10px] font-bold px-2 py-0.5 rounded ${
                         systemStatus?.integrations?.bKash?.configured
@@ -1797,20 +1831,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           : 'bg-cyan-500/20 text-cyan-300'
                       }`}
                     >
-                      {systemStatus?.integrations?.bKash?.configured ? 'LIVE API' : 'SANDBOX SIMULATOR'}
+                      {systemStatus?.integrations?.bKash?.configured ? 'LIVE API' : 'SANDBOX / 01988123793'}
                     </span>
                   </div>
                   <p className="text-xs text-slate-400 leading-relaxed">
                     {systemStatus?.integrations?.bKash?.mode}
                   </p>
                   <p className="text-[11px] text-slate-500 font-mono">
-                    Base URL: {systemStatus?.integrations?.bKash?.baseUrl}
+                    Merchant No: 01988123793 · Instant Delivery on TrxID
                   </p>
                 </div>
 
                 <div className="p-5 rounded-2xl bg-[#12121c] border border-white/10 space-y-3">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-bold text-white">4. Transactional Emails (Resend)</h3>
+                    <h3 className="text-sm font-bold text-white">5. Transactional Emails (Resend)</h3>
                     <span
                       className={`text-[10px] font-bold px-2 py-0.5 rounded ${
                         systemStatus?.integrations?.resend?.configured

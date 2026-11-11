@@ -116,6 +116,10 @@ export interface Order {
   currency: 'BDT';
   paymentStatus: PaymentStatus;
   deliveryStatus: DeliveryStatus;
+  paymentGateway?: 'uddoktapay' | 'bkash' | string;
+  uddoktapayInvoiceId?: string;
+  transactionId?: string;
+  paymentMethod?: string;
   bkashPaymentId?: string;
   bkashTrxId?: string;
   paymentDate?: string;
